@@ -11,6 +11,9 @@
 #include <docks/YouTubeAppDock.hpp>
 #include <utility/YoutubeApiWrappers.hpp>
 #endif
+
+#include <QApplication>
+
 #include <widgets/OBSBasic.hpp>
 
 #include <qt-wrappers.hpp>
@@ -23,6 +26,20 @@ enum class ListOpt : int {
 	ShowAll = 1,
 	Custom,
 };
+
+/* Pushes a cursor shape onto the application-wide override stack and pops it again
+ * when going out of scope, so an early return or an exception cannot leave the
+ * application stuck with a busy cursor. */
+namespace {
+class ScopedOverrideCursor {
+public:
+	explicit ScopedOverrideCursor(Qt::CursorShape shape) { QApplication::setOverrideCursor(shape); }
+	~ScopedOverrideCursor() { QApplication::restoreOverrideCursor(); }
+
+	ScopedOverrideCursor(const ScopedOverrideCursor &) = delete;
+	ScopedOverrideCursor &operator=(const ScopedOverrideCursor &) = delete;
+};
+} // namespace
 
 static OBSData OpenServiceSettings(std::string &type)
 {
@@ -57,6 +74,13 @@ static void GetServiceInfo(std::string &type, std::string &service, std::string 
 AutoConfig::AutoConfig(QWidget *parent) : QWizard(parent)
 {
 	EnableThreadedMessageBoxes(true);
+
+	/* Refreshing the Twitch and Amazon IVS ingest lists blocks this thread for up to
+	 * five seconds per service, and the wizard window does not exist yet while it
+	 * happens. The blocking wait is intentional (the stream page enumerates the
+	 * ingest list right after it), so only give the user visual feedback: a busy
+	 * cursor instead of a window that looks frozen. */
+	const ScopedOverrideCursor busyCursor(Qt::WaitCursor);
 
 	calldata_t cd = {0};
 	calldata_set_int(&cd, "seconds", 5);
